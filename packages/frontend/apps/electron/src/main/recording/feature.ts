@@ -13,7 +13,6 @@ import {
   BehaviorSubject,
   distinctUntilChanged,
   groupBy,
-  interval,
   mergeMap,
   Subject,
   throttleTime,
@@ -64,6 +63,12 @@ export const SAVED_RECORDINGS_DIR = path.join(
   app.getPath('sessionData'),
   'recordings'
 );
+
+// Allow forcibly disabling the whole recording stack to validate perf issues
+// without affecting unrelated flows. This is intentionally an env flag so we
+// can quickly toggle it for field investigations without persisting user state.
+export const RECORDING_HARD_DISABLE =
+  process.env.AFFINE_DISABLE_RECORDING === 'true';
 
 let shareableContent: ShareableContentType | null = null;
 
@@ -441,9 +446,6 @@ function setupMediaListeners() {
   const ShareableContent = require('@affine/native').ShareableContent;
   applications$.next(getAllApps());
   subscribers.push(
-    interval(3000).subscribe(() => {
-      updateApplicationsPing$.next(Date.now());
-    }),
     ShareableContent.onApplicationListChanged(() => {
       updateApplicationsPing$.next(Date.now());
     }),
@@ -514,6 +516,11 @@ function askForScreenRecordingPermission() {
 
 // will be called when the app is ready or when the user has enabled the recording feature in settings
 export function setupRecordingFeature() {
+  if (RECORDING_HARD_DISABLE) {
+    logger.info('Recording feature disabled via AFFINE_DISABLE_RECORDING');
+    return false;
+  }
+
   if (!MeetingsSettingsState.value.enabled || !checkCanRecordMeeting()) {
     return;
   }
